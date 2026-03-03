@@ -7,6 +7,7 @@ import (
 
 func main() {
 	c := CreateCoordinator()
+	go c.Run()
 	worker := CreateWorker(0, c)
 	worker.Work()
 

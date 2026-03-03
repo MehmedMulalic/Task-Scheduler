@@ -3,38 +3,38 @@ package main
 import "fmt"
 
 type workerStatus bool
+type WorkerResult struct {
+	worker *Worker
+	task   Task
+}
 
 const (
 	StatusRunning workerStatus = true
 	StatusIdle    workerStatus = false
 )
 
-type event string
-
 type Worker struct {
 	coordinator *Coordinator
 	id          int
 	status      workerStatus
-	channel     chan event
 }
 
 func CreateWorker(id int, c *Coordinator) *Worker {
 	return &Worker{
 		id:          id,
 		status:      StatusIdle,
-		channel:     make(chan event),
 		coordinator: c,
 	}
 }
 
 func (w *Worker) Work() {
 	go func() {
-		for task := range w.coordinator.Tasks {
-			fmt.Println(task.Message)
+		for t := range w.coordinator.Tasks {
+			fmt.Println(t.Message)
+			w.coordinator.finished <- WorkerResult{
+				worker: w,
+				task:   t,
+			}
 		}
 	}()
-}
-
-func (w *Worker) GetChannel() chan event {
-	return w.channel
 }

@@ -11,14 +11,16 @@ type Task struct {
 }
 
 type Coordinator struct {
-	mux   *http.ServeMux
-	Tasks chan Task
+	mux      *http.ServeMux
+	Tasks    chan Task
+	finished chan WorkerResult
 }
 
 func CreateCoordinator() *Coordinator {
 	c := &Coordinator{
-		mux:   http.NewServeMux(),
-		Tasks: make(chan Task, 5),
+		mux:      http.NewServeMux(),
+		Tasks:    make(chan Task, 5),
+		finished: make(chan WorkerResult),
 	}
 
 	c.mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +54,12 @@ func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 
 	c.Tasks <- task
+}
+
+func (c *Coordinator) Run() {
+	for result := range c.finished {
+		fmt.Printf("Worker %d completed task: %s", result.worker.id, result.task.Message)
+	}
 }
 
 func (c *Coordinator) GetMux() *http.ServeMux {
