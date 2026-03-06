@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type workerStatus bool
 type WorkerResult struct {
@@ -29,8 +32,14 @@ func CreateWorker(id int, c *Coordinator) *Worker {
 
 func (w *Worker) Work() {
 	go func() {
+		// heartbeats
+		w.coordinator.WorkerHeartbeat(w)
+
 		for t := range w.coordinator.Tasks {
-			fmt.Println(t.Message)
+			fmt.Printf("Worker %d received message: %s\n", w.id, t.Message)
+			// map to tasks assigned
+			time.Sleep(time.Second * 10)
+
 			w.coordinator.finished <- WorkerResult{
 				worker: w,
 				task:   t,

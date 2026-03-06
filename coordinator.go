@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 )
 
 type Task struct {
@@ -11,16 +13,21 @@ type Task struct {
 }
 
 type Coordinator struct {
-	mux      *http.ServeMux
-	Tasks    chan Task
-	finished chan WorkerResult
+	mux           *http.ServeMux
+	Tasks         chan Task
+	finished      chan WorkerResult
+	mut           sync.Mutex
+	wHeartbeats   map[int]time.Time
+	wTaskAssigned map[int]*Task
 }
 
 func CreateCoordinator() *Coordinator {
 	c := &Coordinator{
-		mux:      http.NewServeMux(),
-		Tasks:    make(chan Task, 5),
-		finished: make(chan WorkerResult),
+		mux:           http.NewServeMux(),
+		Tasks:         make(chan Task, 5),
+		finished:      make(chan WorkerResult),
+		wHeartbeats:   map[int]time.Time{},
+		wTaskAssigned: map[int]*Task{},
 	}
 
 	c.mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +41,13 @@ func CreateCoordinator() *Coordinator {
 	c.mux.HandleFunc("POST /task", c.createTask)
 
 	return c
+}
+
+func (c *Coordinator) initiateHeartbeat(w *Worker) {
+	go func() {
+		time.Sleep(5 * time.Second)
+
+	}()
 }
 
 func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
@@ -58,10 +72,15 @@ func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
 
 func (c *Coordinator) Run() {
 	for result := range c.finished {
-		fmt.Printf("Worker %d completed task: %s", result.worker.id, result.task.Message)
+		fmt.Printf("Worker %d completed task: %s\n", result.worker.id, result.task.Message)
 	}
 }
 
 func (c *Coordinator) GetMux() *http.ServeMux {
 	return c.mux
+}
+
+func (c *Coordinator) WorkerHeartbeat(w *Worker) {
+	c.wHeartbeats[w.id] = time.Now()
+
 }
