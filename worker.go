@@ -12,6 +12,11 @@ const (
 
 type workerStatus bool
 
+type workerHeartbeat struct {
+	workerId int
+	time     time.Time
+}
+
 type WorkerResult struct {
 	worker *Worker
 	task   Task
@@ -21,24 +26,25 @@ type Worker struct {
 	coordinator *Coordinator
 	id          int
 	status      workerStatus
+	heartbeat   chan<- workerHeartbeat
 }
 
-func CreateWorker(id int, c *Coordinator) *Worker {
+func CreateWorker(id int, c *Coordinator, heartbeats chan workerHeartbeat) *Worker {
 	return &Worker{
 		id:          id,
 		status:      StatusIdle,
-		coordinator: c,
+		coordinator: c, //TODO: treba li coordinator u worker?
+		heartbeat:   heartbeats,
 	}
 }
 
-// TODO: WIP
 func (w *Worker) Work() {
-	go func() {
-		// heartbeats
-		w.coordinator.WorkerHeartbeat(w)
+	ticker := time.NewTicker(5 * time.Second)
 
+	go func() {
 		for t := range w.coordinator.Tasks {
 			fmt.Printf("Worker %d received message: %s\n", w.id, t.Message)
+
 			// map to tasks assigned
 			time.Sleep(time.Second * 10)
 
@@ -46,6 +52,13 @@ func (w *Worker) Work() {
 				worker: w,
 				task:   t,
 			}
+		}
+	}()
+
+	go func() {
+		defer ticker.Stop()
+		for range ticker.C {
+			w.heartbeat <- workerHeartbeat{w.id, time.Now()}
 		}
 	}()
 }

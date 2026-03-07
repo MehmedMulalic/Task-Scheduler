@@ -6,12 +6,14 @@ import (
 )
 
 func main() {
-	c := CreateCoordinator()
-	go c.Run()
+	heartbeats := make(chan workerHeartbeat)
 
-	workers := make([]Worker, 0, 3)
+	c := CreateCoordinator(heartbeats)
+	c.Run()
+
+	workers := make([]*Worker, 0, 3)
 	for i := range 3 {
-		workers = append(workers, *CreateWorker(i, c))
+		workers = append(workers, CreateWorker(i, c, heartbeats))
 		workers[i].Work()
 	}
 
