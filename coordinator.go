@@ -8,10 +8,6 @@ import (
 	"time"
 )
 
-type Task struct {
-	Message string `json:"message"`
-}
-
 type Coordinator struct {
 	mux           *http.ServeMux
 	Tasks         chan Task
@@ -19,6 +15,10 @@ type Coordinator struct {
 	mut           sync.Mutex
 	wHeartbeats   map[int]time.Time
 	wTaskAssigned map[int]*Task
+}
+
+type Task struct {
+	Message string `json:"message"`
 }
 
 func CreateCoordinator() *Coordinator {
@@ -43,11 +43,20 @@ func CreateCoordinator() *Coordinator {
 	return c
 }
 
-func (c *Coordinator) initiateHeartbeat(w *Worker) {
-	go func() {
-		time.Sleep(5 * time.Second)
+func (c *Coordinator) Run() {
+	for result := range c.finished {
+		fmt.Printf("Worker %d completed task: %s\n", result.worker.id, result.task.Message)
+	}
+}
 
-	}()
+func (c *Coordinator) GetMux() *http.ServeMux {
+	return c.mux
+}
+
+// TODO: WIP
+func (c *Coordinator) WorkerHeartbeat(w *Worker) {
+	c.wHeartbeats[w.id] = time.Now()
+
 }
 
 func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
@@ -70,17 +79,10 @@ func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
 	c.Tasks <- task
 }
 
-func (c *Coordinator) Run() {
-	for result := range c.finished {
-		fmt.Printf("Worker %d completed task: %s\n", result.worker.id, result.task.Message)
-	}
-}
+// TODO: WIP
+func (c *Coordinator) initiateHeartbeat(w *Worker) {
+	go func() {
+		time.Sleep(5 * time.Second)
 
-func (c *Coordinator) GetMux() *http.ServeMux {
-	return c.mux
-}
-
-func (c *Coordinator) WorkerHeartbeat(w *Worker) {
-	c.wHeartbeats[w.id] = time.Now()
-
+	}()
 }

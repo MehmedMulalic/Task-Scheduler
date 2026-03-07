@@ -5,16 +5,17 @@ import (
 	"time"
 )
 
-type workerStatus bool
-type WorkerResult struct {
-	worker *Worker
-	task   Task
-}
-
 const (
 	StatusRunning workerStatus = true
 	StatusIdle    workerStatus = false
 )
+
+type workerStatus bool
+
+type WorkerResult struct {
+	worker *Worker
+	task   Task
+}
 
 type Worker struct {
 	coordinator *Coordinator
@@ -30,6 +31,7 @@ func CreateWorker(id int, c *Coordinator) *Worker {
 	}
 }
 
+// TODO: WIP
 func (w *Worker) Work() {
 	go func() {
 		// heartbeats
