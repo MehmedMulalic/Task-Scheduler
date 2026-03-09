@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"log"
+	"os"
 	"sync"
 	"time"
 )
@@ -14,21 +15,25 @@ const (
 type workerStatus bool
 
 type Worker struct {
+	logger     *log.Logger
 	id         int
 	status     workerStatus
 	tasks      <-chan Task
-	tCompleted chan<- WorkerResult
+	wAssigned  chan<- WorkerAssigned
 	heartbeats chan<- WorkerHeartbeat
+	tCompleted chan<- WorkerResult
 	stop       chan struct{}
 	stopOnce   sync.Once
 }
 
-func CreateWorker(id int, t chan Task, h chan WorkerHeartbeat, _tCompleted chan WorkerResult) *Worker {
+func CreateWorker(id int, t chan Task, h chan WorkerHeartbeat, tc chan WorkerResult, wa chan WorkerAssigned) *Worker {
 	return &Worker{
+		logger:     log.New(os.Stdout, "WORKER: ", log.LstdFlags|log.Lshortfile),
 		id:         id,
 		status:     StatusIdle, //TODO: WIP
+		wAssigned:  wa,
+		tCompleted: tc,
 		tasks:      t,
-		tCompleted: _tCompleted,
 		heartbeats: h,
 		stop:       make(chan struct{}),
 	}
@@ -44,15 +49,15 @@ func (w *Worker) Work() {
 				if !ok {
 					return
 				}
-				fmt.Printf("Worker %d received message: %s\n", w.id, t.Message)
+				w.logger.Printf("Worker %d received message: %s\n", w.id, t.Message)
+				w.wAssigned <- WorkerAssigned{w.id, t}
 
-				// map to tasks assigned
 				time.Sleep(time.Second * 10)
-				fmt.Printf("Worker %d finished sleeping, sending results\n", w.id)
+				w.logger.Printf("Worker %d finished sleeping, sending results\n", w.id)
 
 				w.tCompleted <- WorkerResult{
-					worker: w,
-					task:   t,
+					id:   w.id,
+					task: t,
 				}
 			case <-w.stop:
 				return

@@ -15,29 +15,33 @@ type Coordinator struct {
 	mux           *http.ServeMux
 	mutex         sync.RWMutex
 	task          chan<- Task
+	wAssigned     <-chan WorkerAssigned
 	tCompleted    <-chan WorkerResult
 	heartbeats    <-chan WorkerHeartbeat
 	wHeartbeats   map[int]time.Time
 	wTaskAssigned map[int]*Task
+	wCount        int
 }
 
-func CreateCoordinator(t chan Task, h chan WorkerHeartbeat, _tCompleted chan WorkerResult) *Coordinator {
+func CreateCoordinator(wc int, t chan Task, h chan WorkerHeartbeat, tc chan WorkerResult, wa chan WorkerAssigned) *Coordinator {
 	c := &Coordinator{
 		logger:        log.New(os.Stdout, "COORDINATOR: ", log.LstdFlags|log.Lshortfile),
 		mux:           http.NewServeMux(),
 		task:          t,
-		tCompleted:    _tCompleted,
+		wAssigned:     wa,
+		tCompleted:    tc,
 		heartbeats:    h,
 		wHeartbeats:   map[int]time.Time{},
 		wTaskAssigned: map[int]*Task{},
+		wCount:        wc,
 	}
 
-	c.mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "This is a test")
+	c.mux.HandleFunc("GET /healthy", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "Healthy")
 	})
 
 	c.mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "I got tasks")
+		fmt.Fprint(w, "WIP - I got tasks")
 	})
 
 	c.mux.HandleFunc("POST /task", c.createTask)
@@ -48,12 +52,29 @@ func CreateCoordinator(t chan Task, h chan WorkerHeartbeat, _tCompleted chan Wor
 func (c *Coordinator) Run() {
 	ticker := time.NewTicker(5 * time.Second)
 
+	// On task completion
 	go func() {
 		for result := range c.tCompleted {
-			c.logger.Printf("Worker %d completed its task: %s\n", result.worker.id, result.task.Message)
+			c.mutex.Lock()
+			delete(c.wTaskAssigned, result.id)
+			c.mutex.Unlock()
+
+			c.logger.Printf("Worker %d completed its task: %s\n", result.id, result.task.Message)
 		}
 	}()
 
+	// On task assigned
+	go func() {
+		for assignment := range c.wAssigned {
+			c.mutex.Lock()
+			c.wTaskAssigned[assignment.id] = &assignment.task
+			c.mutex.Unlock()
+
+			fmt.Println(c.wTaskAssigned[assignment.id]) //TODO: test, delete
+		}
+	}()
+
+	// On worker hearbeat
 	go func() {
 		for heartbeat := range c.heartbeats {
 			c.mutex.Lock()
@@ -64,6 +85,7 @@ func (c *Coordinator) Run() {
 		}
 	}()
 
+	// On worker death
 	go func() {
 		defer ticker.Stop()
 		for range ticker.C {
@@ -75,9 +97,21 @@ func (c *Coordinator) Run() {
 
 					if time.Since(workerHeartbeat) > 10*time.Second {
 						c.logger.Printf("Worker %d died.\n", wid)
+
 						c.mutex.Lock()
 						delete(c.wHeartbeats, wid)
+						task := c.wTaskAssigned[wid]
+						delete(c.wTaskAssigned, wid)
 						c.mutex.Unlock()
+
+						if task != nil {
+							select {
+							case c.task <- *task:
+								c.logger.Printf("Task reassigned: %s\n", task.Message)
+							default:
+								c.logger.Printf("Task queue full, could not reassign: %s\n", task.Message)
+							}
+						}
 
 						c.checkWorkerCount()
 					}
@@ -112,5 +146,11 @@ func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Coordinator) checkWorkerCount() {
-	//TODO: WIP
+	c.mutex.RLock()
+	alive := len(c.wHeartbeats)
+	c.mutex.RUnlock()
+
+	if float32(alive) < float32(c.wCount)/2.0 {
+		c.logger.Fatal("There are less than half workers alive\n")
+	}
 }

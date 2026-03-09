@@ -6,12 +6,17 @@ type Task struct {
 	Message string `json:"message"`
 }
 
+type WorkerAssigned struct {
+	id   int
+	task Task
+}
+
 type WorkerHeartbeat struct {
 	workerId int
 	time     time.Time
 }
 
 type WorkerResult struct {
-	worker *Worker
-	task   Task
+	id   int
+	task Task
 }
