@@ -33,7 +33,7 @@ Worker 0            Worker 1 ...
 
 - HTTP API for task submission
 - Concurrent worker pool with configurable size
-- Heartbeat-based liveness detection (5s interval, 10s timeout)
+- Heartbeat-based liveness detection
 - Automatic task reassignment on worker failure
 - Coordinator shuts down if fewer than half the workers remain alive
 - Read/write mutex protecting shared state across goroutines
