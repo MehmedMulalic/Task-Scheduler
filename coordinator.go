@@ -41,7 +41,9 @@ func CreateCoordinator(wc int, t chan Task, h chan WorkerHeartbeat, tc chan Work
 	})
 
 	c.mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "WIP - I got tasks")
+		for worker, task := range c.wTaskAssigned {
+			fmt.Fprintf(w, "Worker ID %d working on task: %s\n", worker, task.Message)
+		}
 	})
 
 	c.mux.HandleFunc("POST /task", c.createTask)
@@ -50,7 +52,7 @@ func CreateCoordinator(wc int, t chan Task, h chan WorkerHeartbeat, tc chan Work
 }
 
 func (c *Coordinator) Run() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 
 	// On task completion
 	go func() {
@@ -69,8 +71,6 @@ func (c *Coordinator) Run() {
 			c.mutex.Lock()
 			c.wTaskAssigned[assignment.id] = &assignment.task
 			c.mutex.Unlock()
-
-			fmt.Println(c.wTaskAssigned[assignment.id]) //TODO: test, delete
 		}
 	}()
 

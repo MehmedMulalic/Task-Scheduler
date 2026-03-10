@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"time"
 )
 
 func main() {
@@ -24,15 +22,6 @@ func main() {
 		workers[i].Work()
 	}
 
-	// Kill worker test
-	go func() {
-		time.Sleep(7 * time.Second)
-		fmt.Println("Stopping worker. Time:", time.Now())
-		workers[0].Stop()
-		time.Sleep(7 * time.Second)
-		fmt.Println("Stopping worker. Time:", time.Now())
-		workers[1].Stop()
-	}()
-
+	log.Println("Server initiated at port 5000")
 	log.Fatal(http.ListenAndServe(":5000", c.GetMux()))
 }

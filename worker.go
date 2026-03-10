@@ -7,17 +7,9 @@ import (
 	"time"
 )
 
-const (
-	StatusRunning workerStatus = true
-	StatusIdle    workerStatus = false
-)
-
-type workerStatus bool
-
 type Worker struct {
 	logger     *log.Logger
 	id         int
-	status     workerStatus
 	tasks      <-chan Task
 	wAssigned  chan<- WorkerAssigned
 	heartbeats chan<- WorkerHeartbeat
@@ -30,7 +22,6 @@ func CreateWorker(id int, t chan Task, h chan WorkerHeartbeat, tc chan WorkerRes
 	return &Worker{
 		logger:     log.New(os.Stdout, "WORKER: ", log.LstdFlags|log.Lshortfile),
 		id:         id,
-		status:     StatusIdle, //TODO: WIP
 		wAssigned:  wa,
 		tCompleted: tc,
 		tasks:      t,
@@ -47,19 +38,26 @@ func (w *Worker) Work() {
 			select {
 			case t, ok := <-w.tasks:
 				if !ok {
+					w.logger.Println("Tasks channel closed")
 					return
 				}
 				w.logger.Printf("Worker %d received message: %s\n", w.id, t.Message)
 				w.wAssigned <- WorkerAssigned{w.id, t}
 
-				time.Sleep(time.Second * 10)
-				w.logger.Printf("Worker %d finished sleeping, sending results\n", w.id)
-
-				w.tCompleted <- WorkerResult{
-					id:   w.id,
-					task: t,
+				select {
+				case <-time.After(time.Second * 15):
+					w.logger.Printf("Worker %d finished sleeping, sending results\n", w.id)
+					w.tCompleted <- WorkerResult{
+						id:   w.id,
+						task: t,
+					}
+				case <-w.stop:
+					w.logger.Printf("Worker %d stopped\n", w.id)
+					return
 				}
+
 			case <-w.stop:
+				w.logger.Printf("Worker %d stopped\n", w.id)
 				return
 			}
 		}
