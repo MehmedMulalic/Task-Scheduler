@@ -44,8 +44,8 @@ Worker 0            Worker 1 ...
 **Requirements:** Go 1.21+
 
 ```bash
-git clone https://github.com/MehmedMulalic/distributed-task-scheduler
-cd distributed-task-scheduler
+git clone https://github.com/MehmedMulalic/Task-Scheduler
+cd Task-Scheduler
 go run .
 ```
 
