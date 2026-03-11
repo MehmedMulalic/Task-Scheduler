@@ -60,7 +60,7 @@ func (r *TaskRepository) GetPendingTask() (*TaskResponse, error) {
 	}
 	defer tx.Rollback()
 
-	result := tx.QueryRow("SELECT id, message, status FROM tasks WHERE status = 'pending'")
+	result := tx.QueryRow("SELECT id, message, status FROM tasks WHERE status = 'pending' LIMIT 1")
 
 	t := &TaskResponse{}
 	err = result.Scan(&t.Id, &t.Message, &t.Status)

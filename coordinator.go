@@ -189,13 +189,7 @@ func (c *Coordinator) checkWorkerHealth(wid int) {
 
 		if task != nil {
 			c.taskRepository.UpdateTaskStatus(task.Id, Pending)
-
-			select {
-			case c.task <- *task:
-				c.logger.Printf("Task reassigned: %s\n", task.Message)
-			default:
-				c.logger.Printf("Task queue full, could not reassign: %s\n", task.Message)
-			}
+			c.logger.Printf("Task reassigned: %s\n", task.Message)
 		}
 
 		c.checkWorkerCount()
