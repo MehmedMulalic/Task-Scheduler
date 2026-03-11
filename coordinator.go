@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,40 +9,63 @@ import (
 	"time"
 )
 
-type Coordinator struct {
-	logger        *log.Logger
-	mux           *http.ServeMux
-	mutex         sync.RWMutex
-	task          chan<- Task
-	wAssigned     <-chan WorkerAssigned
-	tCompleted    <-chan WorkerResult
-	heartbeats    <-chan WorkerHeartbeat
-	wHeartbeats   map[int]time.Time
-	wTaskAssigned map[int]*Task
-	wCount        int
+type ErrorResponse struct {
+	Error string `json:"error"`
 }
 
-func CreateCoordinator(wc int, t chan Task, h chan WorkerHeartbeat, tc chan WorkerResult, wa chan WorkerAssigned) *Coordinator {
+type Coordinator struct {
+	logger         *log.Logger
+	mux            *http.ServeMux
+	mutex          sync.RWMutex
+	task           chan<- Task
+	wAssigned      <-chan WorkerAssigned
+	tCompleted     <-chan WorkerResult
+	heartbeats     <-chan WorkerHeartbeat
+	wHeartbeats    map[int]time.Time
+	wTaskAssigned  map[int]*Task
+	taskRepository *TaskRepository
+	wCount         int
+}
+
+func CreateCoordinator(
+	tr *TaskRepository,
+	wc int,
+	t chan Task,
+	h chan WorkerHeartbeat,
+	tc chan WorkerResult,
+	wa chan WorkerAssigned,
+) *Coordinator {
 	c := &Coordinator{
-		logger:        log.New(os.Stdout, "COORDINATOR: ", log.LstdFlags|log.Lshortfile),
-		mux:           http.NewServeMux(),
-		task:          t,
-		wAssigned:     wa,
-		tCompleted:    tc,
-		heartbeats:    h,
-		wHeartbeats:   map[int]time.Time{},
-		wTaskAssigned: map[int]*Task{},
-		wCount:        wc,
+		logger:         log.New(os.Stdout, "COORDINATOR: ", log.LstdFlags|log.Lshortfile),
+		mux:            http.NewServeMux(),
+		taskRepository: tr,
+		wCount:         wc,
+		task:           t,
+		wAssigned:      wa,
+		tCompleted:     tc,
+		heartbeats:     h,
+		wHeartbeats:    map[int]time.Time{},
+		wTaskAssigned:  map[int]*Task{},
 	}
 
 	c.mux.HandleFunc("GET /healthy", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "Healthy")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("healthy"))
 	})
 
 	c.mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
-		for worker, task := range c.wTaskAssigned {
-			fmt.Fprintf(w, "Worker ID %d working on task: %s\n", worker, task.Message)
+		w.Header().Set("Content-Type", "application/json")
+
+		tasks, err := c.taskRepository.GetAllTasks()
+		if err != nil {
+			c.logger.Println("Failed to fetch tasks")
+			http.Error(w, "failed to fetch tasks", http.StatusInternalServerError)
+			return
 		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(tasks)
 	})
 
 	c.mux.HandleFunc("POST /task", c.createTask)
@@ -52,16 +74,28 @@ func CreateCoordinator(wc int, t chan Task, h chan WorkerHeartbeat, tc chan Work
 }
 
 func (c *Coordinator) Run() {
-	ticker := time.NewTicker(2 * time.Second)
+	// Poll pending tasks
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			t, _ := c.taskRepository.GetPendingTask()
+			if t != nil {
+				c.task <- Task{t.Id, t.Message}
+			}
+		}
+	}()
 
 	// On task completion
 	go func() {
 		for result := range c.tCompleted {
 			c.mutex.Lock()
-			delete(c.wTaskAssigned, result.id)
+			delete(c.wTaskAssigned, result.WorkerId)
 			c.mutex.Unlock()
 
-			c.logger.Printf("Worker %d completed its task: %s\n", result.id, result.task.Message)
+			c.taskRepository.UpdateTaskStatus(result.Task.Id, Completed)
+			c.logger.Printf("Worker %d completed its task: %s\n", result.WorkerId, result.Task.Message)
 		}
 	}()
 
@@ -87,35 +121,12 @@ func (c *Coordinator) Run() {
 
 	// On worker death
 	go func() {
+		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
+
 		for range ticker.C {
 			for wid := range c.wHeartbeats {
-				go func(wid int) {
-					c.mutex.RLock()
-					workerHeartbeat := c.wHeartbeats[wid]
-					c.mutex.RUnlock()
-
-					if time.Since(workerHeartbeat) > 10*time.Second {
-						c.logger.Printf("Worker %d died.\n", wid)
-
-						c.mutex.Lock()
-						delete(c.wHeartbeats, wid)
-						task := c.wTaskAssigned[wid]
-						delete(c.wTaskAssigned, wid)
-						c.mutex.Unlock()
-
-						if task != nil {
-							select {
-							case c.task <- *task:
-								c.logger.Printf("Task reassigned: %s\n", task.Message)
-							default:
-								c.logger.Printf("Task queue full, could not reassign: %s\n", task.Message)
-							}
-						}
-
-						c.checkWorkerCount()
-					}
-				}(wid)
+				go c.checkWorkerHealth(wid)
 			}
 		}
 	}()
@@ -140,9 +151,16 @@ func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c.logger.Printf("Received: %+v\n", t)
-	w.WriteHeader(http.StatusCreated)
 
-	c.task <- t
+	err = c.taskRepository.CreateTask(t)
+	if err != nil {
+		c.logger.Println("Failed to create task")
+		http.Error(w, "failed to create task", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("task created"))
 }
 
 func (c *Coordinator) checkWorkerCount() {
@@ -152,5 +170,34 @@ func (c *Coordinator) checkWorkerCount() {
 
 	if float32(alive) < float32(c.wCount)/2.0 {
 		c.logger.Fatal("There are less than half workers alive\n")
+	}
+}
+
+func (c *Coordinator) checkWorkerHealth(wid int) {
+	c.mutex.RLock()
+	workerHeartbeat := c.wHeartbeats[wid]
+	c.mutex.RUnlock()
+
+	if time.Since(workerHeartbeat) > 10*time.Second {
+		c.logger.Printf("Worker %d died.\n", wid)
+
+		c.mutex.Lock()
+		delete(c.wHeartbeats, wid)
+		task := c.wTaskAssigned[wid]
+		delete(c.wTaskAssigned, wid)
+		c.mutex.Unlock()
+
+		if task != nil {
+			c.taskRepository.UpdateTaskStatus(task.Id, Pending)
+
+			select {
+			case c.task <- *task:
+				c.logger.Printf("Task reassigned: %s\n", task.Message)
+			default:
+				c.logger.Printf("Task queue full, could not reassign: %s\n", task.Message)
+			}
+		}
+
+		c.checkWorkerCount()
 	}
 }

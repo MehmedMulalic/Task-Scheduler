@@ -31,8 +31,6 @@ func CreateWorker(id int, t chan Task, h chan WorkerHeartbeat, tc chan WorkerRes
 }
 
 func (w *Worker) Work() {
-	ticker := time.NewTicker(5 * time.Second)
-
 	go func() {
 		for {
 			select {
@@ -48,8 +46,8 @@ func (w *Worker) Work() {
 				case <-time.After(time.Second * 15):
 					w.logger.Printf("Worker %d finished sleeping, sending results\n", w.id)
 					w.tCompleted <- WorkerResult{
-						id:   w.id,
-						task: t,
+						w.id,
+						t,
 					}
 				case <-w.stop:
 					w.logger.Printf("Worker %d stopped\n", w.id)
@@ -64,7 +62,9 @@ func (w *Worker) Work() {
 	}()
 
 	go func() {
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ticker.C:

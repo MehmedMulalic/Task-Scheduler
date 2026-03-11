@@ -1,19 +1,42 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
+	"os"
+
+	_ "modernc.org/sqlite"
 )
 
-func main() {
-	WORKER_COUNT := 3
+const WORKER_COUNT = 3
 
+func main() {
+	logger := log.New(os.Stdout, "MAIN: ", log.LstdFlags|log.Lshortfile)
+
+	db, err := sql.Open("sqlite", "tasks.db")
+	if err != nil {
+		logger.Fatal("Database could not be opened. Error message: ", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			message TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending'
+		)
+	`)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
+	taskRepository := NewTaskRepository(db)
 	tasks := make(chan Task, 5)
 	heartbeats := make(chan WorkerHeartbeat)
 	tCompleted := make(chan WorkerResult)
 	assignedWorker := make(chan WorkerAssigned)
 
-	c := CreateCoordinator(WORKER_COUNT, tasks, heartbeats, tCompleted, assignedWorker)
+	c := CreateCoordinator(taskRepository, WORKER_COUNT, tasks, heartbeats, tCompleted, assignedWorker)
 	c.Run()
 
 	workers := make([]*Worker, 0, WORKER_COUNT)
@@ -22,6 +45,6 @@ func main() {
 		workers[i].Work()
 	}
 
-	log.Println("Server initiated at port 5000")
-	log.Fatal(http.ListenAndServe(":5000", c.GetMux()))
+	logger.Println("Server initiated at port 5000")
+	logger.Fatal(http.ListenAndServe(":5000", c.GetMux()))
 }
