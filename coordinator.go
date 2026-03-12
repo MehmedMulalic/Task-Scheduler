@@ -160,7 +160,7 @@ func (c *Coordinator) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("task created"))
+	w.Write([]byte("task created\n"))
 }
 
 func (c *Coordinator) checkWorkerCount() {
