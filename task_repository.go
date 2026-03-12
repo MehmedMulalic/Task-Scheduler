@@ -75,6 +75,7 @@ func (r *TaskRepository) GetPendingTask() (*TaskResponse, error) {
 		return nil, err
 	}
 
+	t.Status = InProgress
 	tx.Commit()
 	return t, nil
 }
