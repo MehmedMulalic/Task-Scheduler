@@ -30,6 +30,9 @@ Worker 0              Worker 1 ...
   └── Heartbeat ticker    └── Heartbeat ticker
 ```
 
+## Animation
+![Task Scheduler Overview GIF](Animation.gif)
+
 ## Features
 
 - HTTP API for task submission and status monitoring
